@@ -1,3 +1,6 @@
+/*
+This model uses a Arduino Uno R3 to design an AutoPay Machine.
+*/
 #include <LiquidCrystal.h>
 
 // initialize the library with the numbers of the interface pins
