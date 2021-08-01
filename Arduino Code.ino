@@ -60,7 +60,7 @@ void setup() {
 }
 
 void loop() {
-
+  lcd.clear();
   //setting the variable for ticket input detection
   int TktInput = 0;
   //Setting the variable to check for ticket availability
