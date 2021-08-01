@@ -1,18 +1,18 @@
-/*
-This model uses a Arduino Uno R3 to design an AutoPay Machine.
-*/
 #include <LiquidCrystal.h>
+#include <Servo.h>
 
-// initialize the library with the numbers of the interface pins
+#define RM1_read 10
+#define RM5_read 11
+#define RM10_read 12
+#define servo_w 9
+
+Servo servo;
 LiquidCrystal lcd(7, 6, 5, 4, 3, 2);
-//To simulate the data stored when the ticket is taken
-//when the user enters the carpark
+
 String Database[5] = {"0123456", "1234567", "2345678", "3456789", "4567890"};
-//The time the card is take out of the system
-//All time are calculated in seconds
-//For 12pm, 10am, 8.30am, 2pm,6.30pm
 long Database_Time[5] = {43200, 36000, 30600, 50400, 66600};
-//To Record the time using millis function
+String Database_status[5] = {"NOPE", "NOPE", "NOPE", "NOPE", "NOPE"};
+
 long InitialTime, CurrentTime;
 const long TimeOutDuration = 30000;
 
@@ -40,65 +40,46 @@ long setTime() {
 }
 
 void setup() {
-  // set up the LCD's number of columns and rows:
   lcd.begin(16, 2);
-  // Print a message to the LCD.
   Serial.begin(9600);
   pinMode(8, INPUT);
-  pinMode(9, INPUT);
-  pinMode(10, INPUT);
-  pinMode(11, INPUT);
-  //Call the function to set InitalTime
+  pinMode(RM1_read, INPUT);
+  pinMode(RM5_read, INPUT);
+  pinMode(RM10_read, INPUT);
+  servo.attach(servo_w);
+  servo.write(0);
   InitialTime = setTime();
 }
 
 void loop() {
-  //setting the variable for ticket input detection
-  int TktInput = 0;
-  //Setting the variable to check for ticket availability
-  int Error;
-  //Variable for showing the time
-  int hour, minute;
-  //Sets the payment price according to the duration
-  int Price;
-  //Sets the variable for Receiving Notes and Payment
-  int RM1 = 0, RM5 = 0, RM10 = 0, Pay = 0, Remain;
-  //Records the String value in the Barcode
-  String Barcode;
-  //Sets the variable for Returning changes
-  int Return_RM10 = 0, Return_RM5 = 0, Return_RM1 = 0, Changes;
-  //Sets the variable for time out during rreceiving notes
-  long TimeOut = 0;
-  //Record the current millis to update the time
-  long Time = millis() / 1000L;
-  //Records the current time
-  CurrentTime = InitialTime + Time;
   lcd.clear();
-  lcd.print("Start");
-  //Call a function to write the time in lcd and serial monitor
-  //in the for mat hh:mm
-  WriteTime(CurrentTime);
+  int TktInput = 0;
+  int Error;
+  int hour, minute;
+  int Price;
+  int RM1 = 0, RM5 = 0, RM10 = 0, Pay = 0, Remain;
+  String Barcode;
+  int Return_RM10 = 0, Return_RM5 = 0, Return_RM1 = 0, Changes;
+  long TimeOut = 0;
+  long Time;
   delay(1000);
-  //Wait for user to input a ticket
-  //When no ticket, show welcome message
+
   while (!TktInput) {
+    Time = millis() / 1000L;
+    CurrentTime = InitialTime + Time;
+    WriteTime(CurrentTime);
     Welcome_msg(TktInput);
     lcd.clear();
   }
-  //Simulates the action of reading the Barcode input with Serial Monitor
+
   ReadTicket(Barcode);
-  //Check for ticket availability, if not available will show error
   TicketCheck(Barcode, Error);
-  //If error in Barcode, returns the ticket and restart the loop
   if (Error == 1) {
     Return_Ticket();
     return;
   }
-  delay(500);
-  //Record the start time of the ticket and compare it with current time
-  //Calculate the duration of the ticket
+  delay(100);
   long Duration = duration(CurrentTime, Barcode);
-  //sets the maximum price at RM10 for 5 hours
   if (Duration > 18000) {
     Price = 10;
   }
@@ -112,10 +93,9 @@ void loop() {
     return;
   }
   else {
-    //if not exceed 5 hours
     Fee_calculation(Price, Duration);
   }
-  delay(500);
+  delay(100);
   if (Price > 0) {
     long StartTimer = millis();
     Remain = Price;
@@ -130,6 +110,20 @@ void loop() {
       TimeOut = CurrentTimer - StartTimer;
       delay(100);
     }
+    if (Remain == 0)
+      for (int k = 0; k < 5; k++) {
+        if (Barcode == Database[k])
+          Database_status[k] = "PAID";
+      }
+  }
+  else if (Price == 0) {
+    lcd.clear();
+    lcd.print("Remain: RM0");
+    delay(1000);
+    for (int k = 0; k < 5; k++) {
+      if (Barcode == Database[k])
+        Database_status[k] = "PAID";
+    }
   }
   if (TimeOut > TimeOutDuration) {
     Return_Note(RM1, RM5, RM10);
@@ -139,6 +133,8 @@ void loop() {
     Return_Note (Return_RM1, Return_RM5, Return_RM10);
   }
   Return_Ticket();
+  for (int i = 0; i < 5; i++)
+    Serial.println(Database_status[i]);
   delay(3000);
 }
 
@@ -146,15 +142,7 @@ void WriteTime(long int CurrentTime) {
   int hour = CurrentTime / 3600;
   int minutes = CurrentTime - hour * 3600;
   int minute = minutes / 60;
-  if (hour < 10)
-    Serial.print("0");
-  Serial.print(hour);
-  Serial.print(":");
-  if (minute < 10)
-    Serial.print("0");
-  Serial.print(minute);
-  Serial.println();
-  lcd.setCursor(0, 1);
+  lcd.setCursor(0, 0);
   if (hour < 10)
     lcd.print("0");
   lcd.print(hour);
@@ -162,18 +150,17 @@ void WriteTime(long int CurrentTime) {
   if (minute < 10)
     lcd.print("0");
   lcd.print(minute);
-  lcd.println();
 }
 
 void Welcome_msg(int& Tkt) {
   String msg = "Welcome. Please Insert your Parking Ticket.";
   for (int i = 0; i < msg.length() - 15; i++) {
-    //Simulate the receiving of ticket
-    //When ticket receive = HIGH
     Tkt = digitalRead(8);
-    if (Tkt)
+    if (Tkt) {
+      servo.write(180);
       return;
-    lcd.clear();
+    }
+    lcd.setCursor(0, 1);
     lcd.print(msg.substring(i, i + 16));
     delay(200);
     if (i == 0 || i == msg.length() - 16)
@@ -183,7 +170,7 @@ void Welcome_msg(int& Tkt) {
 }
 
 //Simulating the action of sending the read barcode to Arduino
-void ReadTicket(String& Barcode) {
+void ReadTicket(String & Barcode) {
   Serial.println("Please input the barcode number");
   delay(500);
   lcd.clear();
@@ -197,11 +184,7 @@ void ReadTicket(String& Barcode) {
   lcd.clear();
   return;
 }
-
-//Check ticket for availability and return error
 void TicketCheck(String Barcode, int& error) {
-  //An array of barcodes will be recorded in a database
-  //The database will include the time
   int Correct = 0;
   for (int i = 0; i < 5; i++) {
     if (Barcode == Database[i]) {
@@ -243,7 +226,7 @@ void Fee_calculation(int& Price, long Duration) {
   int minutes = (Duration - hours * 3600) / 60;
   Price = hours * 2;
   if (minutes > 15) {
-    Price = Price + 1;
+    Price = Price + 2;
   }
   return;
 }
@@ -256,10 +239,10 @@ void ShowPrice(int Price) {
 }
 
 //Simulating the action of paying notes using buttons
-void ReadNotes(int& RM1, int& RM5, int& RM10, int& Pay, long& TimerStart) {
-  int RM1_in = digitalRead(9);
-  int RM5_in = digitalRead(10);
-  int RM10_in = digitalRead(11);
+void ReadNotes(int& RM1, int& RM5, int& RM10, int& Pay, long & TimerStart) {
+  int RM1_in = digitalRead(RM1_read);
+  int RM5_in = digitalRead(RM5_read);
+  int RM10_in = digitalRead(RM10_read);
   if (RM1_in) {
     RM1 = RM1 + 1;
     Pay = Pay + 1;
@@ -326,6 +309,7 @@ void Return_Note(int RM1, int RM5, int RM10) {
 }
 
 void Return_Ticket () {
+  servo.write(0);
   String msg_1 = "Please take your parking ticket";
   for (int j = 0; j < 3; j++) {
     for (int i = 0; i < msg_1.length() - 15; i++) {
